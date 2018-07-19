@@ -1,5 +1,6 @@
 application:
   name: reaction
+  certificate_arn: arn:aws:acm:us-west-2:202687395681:certificate/8d13bb5f-bc3b-4fa8-82b7-4c4cb91a677b
   environments:
   - name: staging
     vpc:
@@ -17,24 +18,17 @@ application:
         instance_type: t2.medium
         services:
         - name: core-service
-          desired_task_count: 2
+          desired_task_count: 0
           min_task_count: 0
           max_task_count: 4
           task-definition:
             name: core-task-def
-            cpu: 10.1
+            cpu: 1000
             memory: 3600
             container:
               name: core
+              port: 3000
               image: reactioncommerce/reaction
-              image_tag: release-1.14.0
+              image_tag: release-1.13.0
               environment:
-                REACTION_AUTH: AWS_SSM
-                REACTION_EMAIL: AWS_SSM
-                REACTION_USER: AWS_SSM
-                ROOT_URL: AWS_SSM
-                MONGO_URL: AWS_SSM
-                MONGO_OPLOG_URL: AWS_SSM
-                CLOUDFRONT_URL: AWS_SSM
-                METEOR_SETTINGS: AWS_SSM
                 SKIP_FIXTURES: 1

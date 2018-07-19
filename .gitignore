@@ -52,3 +52,6 @@ imports/plugins/custom/*
 .reaction/config.json
 
 coverage/*
+
+.env.ini
+.env.sops

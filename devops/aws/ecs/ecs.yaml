@@ -411,11 +411,23 @@ Outputs:
         Export:
           Name: !Sub "${AWS::StackName}-ECSCluster"
 
+    LoadBalancerArn:
+        Description: Load balancer ARN
+        Value: !Ref LoadBalancer
+        Export:
+          Name: !Sub "${AWS::StackName}-LoadBalancerArn"
+
     LoadBalancerUrl:
         Description: The URL of the ALB
         Value: !GetAtt LoadBalancer.DNSName
         Export:
           Name: !Sub "${AWS::StackName}-LoadBalancerUrl"
+
+    ListenerArn:
+        Description: Listener ARN
+        Value: !Ref LoadBalancerListener
+        Export:
+          Name: !Sub "${AWS::StackName}-ListenerArn"
 
     HostedZoneId:
         Description: The Route53 hosted zone ID for the ALB

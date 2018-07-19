@@ -1,0 +1,416 @@
+Description: >
+    This template deploys the Reaction Commerce services in an existing ECS cluster.
+
+Parameters: 
+
+    CloudFormationVPCStackName:
+      Description: Name of an existing CloudFormation stack used to create the VPC
+      Type: String
+
+    CloudFormationECSStackName:
+      Description: Name of an existing CloudFormation stack used to create the ECS cluster
+      Type: String
+
+    AppName:
+      Description: Application name
+      Type: String
+
+    EnvName:
+      Description: Environment name
+      Type: String
+
+    CertificateArn:
+      Description: ARN for pre-created SSL certificate for names in RootDomain
+      Type: String
+
+    DesiredTaskCount: 
+      Description: How many instances of this task should we run across our cluster?
+      Type: Number
+      Default: 2
+
+    TaskMemory: 
+      Description: Memory units to allocate for the ECS task
+      Type: Number
+      Default: 3600
+
+    TaskCpu: 
+      Description: CPU units to allocate for the ECS task
+      Type: Number
+      Default: 1000
+
+    MinTaskCount:
+      Description: Minimum number of instances of this task we can run across our cluster
+      Type: Number
+      Default: 0
+    ContainerImage:
+      Description: Docker image to be used for the app container
+      Type: String
+
+    DesiredTaskCount: 
+      Description: How many instances of this task should we run across our cluster?
+      Type: Number
+      Default: 2
+
+    TaskMemory: 
+      Description: Memory units to allocate for the ECS task
+      Type: Number
+      Default: 3600
+
+    TaskCpu: 
+      Description: CPU units to allocate for the ECS task
+      Type: Number
+      Default: 1000
+
+    MinTaskCount:
+      Description: Minimum number of instances of this task we can run across our cluster
+      Type: Number
+      Default: 0
+
+    MaxTaskCount:
+      Description: Maximum number of instances of this task we can run across our cluster
+      Type: Number
+      Default: 3
+
+    ALBListenerPath: 
+      Description: The path to register with the Application Load Balancer
+      Type: String
+      Default: /
+
+    ContainerImage:
+      Description: Docker image to be used for the app container
+      Type: String
+
+    ContainerImageTag:
+      Description: Tag of the Docker image to be used for the app container
+      Type: String
+
+    ContainerName:
+      Description: Container name
+      Type: String
+
+    ContainerPort:
+      Description: Container port
+      Type: Number
+      Default: 3000
+
+    ReactionAuth:
+      Description: Auth for admin user
+      Type: String
+
+    ReactionUser:
+      Description: Name for admin user
+      Type: String
+      Default: "Reaction Admin"
+
+    ReactionEmail:
+      Description: Email for admin user
+      Type: String
+      Default: "admin@localhost"
+
+    RootDomain:
+      Description: DNS domain for the root URL for the Reaction app
+      Type: String
+
+    MongoUrlHost:
+      Description: The host part of the MongoDB URL the Service should connect to
+      Type: String
+
+    MongoUrlPort:
+      Description: The port part of the MongoDB URL the Service should connect to
+      Type: String
+
+    MongoUrlQueryString:
+      Description: The query string part of the MongoDB URL the Service should connect to
+      Type: String
+
+    MongoUrlDatabase:
+      Description: The database part of the MongoDB URL the Service should connect to
+      Type: String
+
+    MongoDBUsername:
+      Description: Username for the MongoDB connection
+      Type: String
+
+    MongoDBPassword:
+      Description: Password for the MongoDB connection
+      Type: String
+
+    MongoOplogUrl:
+      Description: The MongoDB Oplog URL the Service should connect to
+      Type: String
+
+    CloudfrontUrl:
+      Description: The URL to pass to Meteor to serve static assets
+      Type: String
+
+    MeteorSettings:
+      Description: An escaped JSON object of settings to pass on to Meteor
+      Type: String
+
+    SkipFixtures:
+      Description: Is 1 if we need to skip fixtures
+      Type: String
+
+Resources:
+
+    Service: 
+        Type: AWS::ECS::Service
+        DependsOn: ListenerRule
+        Properties: 
+            Cluster:
+              Fn::ImportValue:
+                !Sub "${CloudFormationECSStackName}-ECSCluster" 
+            Role: !Ref ServiceRole
+            DesiredCount: !Ref DesiredTaskCount
+            TaskDefinition: !Ref TaskDefinition
+            LoadBalancers: 
+                - ContainerName: !Ref ContainerName
+                  ContainerPort: !Ref ContainerPort
+                  TargetGroupArn: !Ref TargetGroup
+
+    TaskDefinition:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+            Family: reaction-service
+            Memory: !Ref TaskMemory
+            Cpu: !Ref TaskCpu
+            ContainerDefinitions:
+                - Name: !Ref ContainerName
+                  Essential: true
+                  Image: !Sub "${ContainerImage}:${ContainerImageTag}"
+                  Environment:
+                    - Name: REACTION_AUTH
+                      Value: !Ref ReactionAuth
+                    - Name: REACTION_EMAIL
+                      Value: !Ref ReactionEmail
+                    - Name: REACTION_USER
+                      Value: !Ref ReactionUser
+                    - Name: ROOT_URL
+                      Value: !Sub "https://${AppName}-${EnvName}.${RootDomain}/"
+                    - Name: MONGO_URL
+                      Value: !Sub "mongodb://${MongoDBUsername}:${MongoDBPassword}@${MongoUrlHost}:${MongoUrlPort}/${MongoUrlDatabase}?${MongoUrlQueryString}"
+                    - Name: MONGO_OPLOG_URL
+                      Value: !Ref MongoOplogUrl
+                    - Name: CLOUDFRONT_URL
+                      Value: !Ref CloudfrontUrl
+                    - Name: METEOR_SETTINGS
+                      Value: !Ref MeteorSettings
+                    - Name: SKIP_FIXTURES
+                      Value: !Ref SkipFixtures
+
+                  PortMappings:
+                    - ContainerPort: !Ref ContainerPort
+                  LogConfiguration:
+                    LogDriver: awslogs
+                    Options:
+                        awslogs-group: !Ref AWS::StackName
+                        awslogs-region: !Ref AWS::Region
+
+    CloudWatchLogsGroup:
+        Type: AWS::Logs::LogGroup
+        Properties: 
+            LogGroupName: !Ref AWS::StackName
+            RetentionInDays: 365  
+
+    TargetGroup:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+            VpcId:
+              Fn::ImportValue:
+                !Sub "${CloudFormationVPCStackName}-VpcId" 
+            Port: !Ref ContainerPort
+            Protocol: HTTP
+            Matcher: 
+                HttpCode: 200-299
+            HealthCheckIntervalSeconds: 30
+            HealthCheckPath: /health
+            HealthCheckProtocol: HTTP
+            HealthCheckTimeoutSeconds: 20
+            HealthyThresholdCount: 2
+            UnhealthyThresholdCount: 5
+
+    LoadBalancerListener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        Properties:
+            LoadBalancerArn:
+              Fn::ImportValue:
+                !Sub "${CloudFormationECSStackName}-LoadBalancerArn" 
+            Port: 80
+            Protocol: HTTP
+            DefaultActions:
+                - Type: forward
+                  TargetGroupArn: !Ref TargetGroup
+
+    LoadBalancerSecureListener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        Properties:
+            LoadBalancerArn:
+              Fn::ImportValue:
+                !Sub "${CloudFormationECSStackName}-LoadBalancerArn" 
+            Port: 443
+            Protocol: HTTPS
+            Certificates:
+                - CertificateArn: !Ref CertificateArn
+            DefaultActions:
+                - Type: forward
+                  TargetGroupArn: !Ref TargetGroup
+    
+    ListenerRule:
+        Type: AWS::ElasticLoadBalancingV2::ListenerRule
+        Properties:
+            ListenerArn:
+              Fn::ImportValue:
+                !Sub "${CloudFormationECSStackName}-ListenerArn"
+            Priority: 1
+            Conditions:
+                - Field: path-pattern
+                  Values: 
+                    - !Ref ALBListenerPath
+            Actions:
+                - TargetGroupArn: !Ref TargetGroup
+                  Type: forward
+
+#    DNSRecord:
+#        Type: AWS::Route53::RecordSetGroup
+#        Properties:
+#          HostedZoneName: !Ref RootDomain
+#          Comment: Zone apex alias targeted to LoadBalancer.
+#          RecordSets:
+#          - Name: !Sub "${AppName}-${EnvName}.${RootDomain}."
+#            Type: A
+#            AliasTarget:
+#              HostedZoneId:
+#                Fn::ImportValue:
+#                  !Sub "${CloudFormationECSStackName}-HostedZoneId" 
+#              DNSName:
+#                Fn::ImportValue:
+#                  !Sub "${CloudFormationECSStackName}-LoadBalancerUrl" 
+
+
+    # This IAM Role grants the service access to register/unregister with the 
+    # Application Load Balancer (ALB). It is based on the default documented here:
+    # http://docs.aws.amazon.com/AmazonECS/latest/developerguide/service_IAM_role.html
+    ServiceRole: 
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub ecs-service-${AWS::StackName}
+            Path: /
+            AssumeRolePolicyDocument: |
+                {
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": { "Service": [ "ecs.amazonaws.com" ]},
+                        "Action": [ "sts:AssumeRole" ]
+                    }]
+                }
+            Policies:
+                - PolicyName: !Sub ecs-service-${AWS::StackName}
+                  PolicyDocument:
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                                "Effect": "Allow",
+                                "Action": [
+                                    "ec2:AuthorizeSecurityGroupIngress",
+                                    "ec2:Describe*",
+                                    "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                                    "elasticloadbalancing:Describe*",
+                                    "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                                    "elasticloadbalancing:DeregisterTargets",
+                                    "elasticloadbalancing:DescribeTargetGroups",
+                                    "elasticloadbalancing:DescribeTargetHealth",
+                                    "elasticloadbalancing:RegisterTargets"
+                                ],
+                                "Resource": "*"
+                        }]
+                    }
+
+    ServiceScalableTarget:
+        Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+        Properties:
+            MaxCapacity: !Ref MaxTaskCount
+            MinCapacity: !Ref MinTaskCount
+            ResourceId: !Join
+                - /
+                - - service
+                  - Fn::ImportValue:
+                      !Sub "${CloudFormationECSStackName}-ECSCluster" 
+                  - !GetAtt Service.Name
+            RoleARN:
+              Fn::ImportValue:
+                !Sub "${CloudFormationECSStackName}-ECSAutoScalingRoleArn" 
+            ScalableDimension: ecs:service:DesiredCount
+            ServiceNamespace: ecs
+
+    ServiceScaleOutPolicy:
+        Type : "AWS::ApplicationAutoScaling::ScalingPolicy"
+        Properties:
+            PolicyName: ServiceScaleOutPolicy
+            PolicyType: StepScaling
+            ScalingTargetId: !Ref ServiceScalableTarget
+            StepScalingPolicyConfiguration:
+                AdjustmentType: ChangeInCapacity
+                Cooldown: 1800
+                MetricAggregationType: Average
+                StepAdjustments:
+                - MetricIntervalLowerBound: 0
+                  ScalingAdjustment: 1
+
+    ServiceScaleInPolicy:
+        Type : "AWS::ApplicationAutoScaling::ScalingPolicy"
+        Properties:
+            PolicyName: ServiceScaleInPolicy
+            PolicyType: StepScaling
+            ScalingTargetId: !Ref ServiceScalableTarget
+            StepScalingPolicyConfiguration:
+                AdjustmentType: ChangeInCapacity
+                Cooldown: 1800
+                MetricAggregationType: Average
+                StepAdjustments:
+                - MetricIntervalUpperBound: 0
+                  ScalingAdjustment: -1
+
+    CPUScaleOutAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+            AlarmName: CPU utilization greater than 90%
+            AlarmDescription: Alarm if cpu utilization greater than 90% of reserved cpu
+            Namespace: AWS/ECS
+            MetricName: CPUUtilization
+            Dimensions:
+            - Name: ClusterName
+              Value:
+                Fn::ImportValue:
+                  !Sub "${CloudFormationECSStackName}-ECSCluster" 
+            - Name: ServiceName
+              Value: !GetAtt Service.Name
+            Statistic: Maximum
+            Period: '60'
+            EvaluationPeriods: '3'
+            Threshold: '90'
+            ComparisonOperator: GreaterThanThreshold
+            AlarmActions:
+            - !Ref ServiceScaleOutPolicy
+
+    CPUScaleInAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+            AlarmName: CPU utilization less than 70%
+            AlarmDescription: Alarm if cpu utilization less than 70% of reserved cpu
+            Namespace: AWS/ECS
+            MetricName: CPUUtilization
+            Dimensions:
+            - Name: ClusterName
+              Value:
+                Fn::ImportValue:
+                  !Sub "${CloudFormationECSStackName}-ECSCluster" 
+            - Name: ServiceName
+              Value: !GetAtt Service.Name
+            Statistic: Maximum
+            Period: '60'
+            EvaluationPeriods: '10'
+            Threshold: '70'
+            ComparisonOperator: LessThanThreshold
+            AlarmActions:
+            - !Ref ServiceScaleInPolicy
+
